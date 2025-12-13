@@ -1,0 +1,164 @@
+document.addEventListener("DOMContentLoaded", () => {
+    const employeeListEl = document.getElementById("employeeList");
+    const filter = document.getElementById("departmentFilter");
+
+    const empID = document.getElementById("empID");
+    const empName = document.getElementById("empName");
+    const empPosition = document.getElementById("empPosition");
+    const empRate = document.getElementById("empRate");
+    const basicPay = document.getElementById("basicPay");
+    const empFirstName = document.getElementById("empFirstName");
+    const empLastName = document.getElementById("empLastName");
+    const empDepartment = document.getElementById("empDepartment");
+    const modalTitle = document.getElementById("modalTitle");
+    const saveBtn = document.getElementById("saveEmployeeBtn");
+    const employeeModal = new bootstrap.Modal(document.getElementById("employeeModal"));
+
+    const { db, firebaseImports } = window;
+    const { ref, set, onValue, remove } = firebaseImports;
+    const employeesRef = ref(db, "employees/");
+
+    let editingEmployeeID = null;
+
+    function normalize(str) {
+        return str?.trim().toLowerCase() || "";
+    }
+
+    function applyFilter() {
+    const selectedDept = normalize(filter.value);
+    document.querySelectorAll(".employee-item").forEach(item => {
+        const empDept = normalize(item.dataset.department);
+        const show = selectedDept === "all" || empDept === selectedDept;
+
+        // Use Bootstrap d-none instead of style.display
+        item.classList.toggle("d-none", !show);
+
+        console.log(item.textContent, "department:", empDept, "show:", show);
+    });
+}
+
+
+    function loadEmployees() {
+        onValue(employeesRef, snapshot => {
+            employeeListEl.innerHTML = "";
+            const departmentSet = new Set();
+
+            if (!snapshot.exists()) {
+                employeeListEl.innerHTML = '<li class="list-group-item text-muted" id="noEmployees">No employees yet</li>';
+                filter.innerHTML = '<option value="all">All Departments</option>';
+                return;
+            }
+
+            snapshot.forEach(childSnap => {
+                const data = childSnap.val();
+                departmentSet.add(data.department);
+
+                const li = document.createElement("li");
+                li.className = "list-group-item d-flex justify-content-between align-items-center employee-item";
+                li.dataset.department = data.department;
+                li.style.cursor = "pointer";
+
+                const nameSpan = document.createElement("span");
+                nameSpan.textContent = `${data.firstName} ${data.lastName} (${data.department})`;
+                nameSpan.style.flexGrow = "1";
+                li.appendChild(nameSpan);
+
+                // Click employee to show details
+                nameSpan.addEventListener("click", () => {
+                    document.querySelectorAll(".employee-item").forEach(i => i.classList.remove("active"));
+                    li.classList.add("active");
+                    empID.textContent = childSnap.key;
+                    empName.textContent = `${data.firstName} ${data.lastName}`;
+                    empPosition.textContent = data.department;
+                    empRate.textContent = "-";
+                    basicPay.textContent = "-";
+                });
+
+                // Edit / Delete buttons
+                const btnContainer = document.createElement("div");
+
+                const editBtn = document.createElement("button");
+                editBtn.className = "btn btn-sm btn-warning me-2";
+                editBtn.textContent = "Edit";
+                editBtn.addEventListener("click", e => {
+                    e.stopPropagation();
+                    editingEmployeeID = childSnap.key;
+                    modalTitle.textContent = "Update Employee";
+                    empID.value = childSnap.key;
+                    empID.disabled = true;
+                    empFirstName.value = data.firstName;
+                    empLastName.value = data.lastName;
+                    empDepartment.value = data.department;
+                    employeeModal.show();
+                });
+
+                const deleteBtn = document.createElement("button");
+                deleteBtn.className = "btn btn-sm btn-danger";
+                deleteBtn.textContent = "Delete";
+                deleteBtn.addEventListener("click", e => {
+                    e.stopPropagation();
+                    if (confirm(`Delete ${data.firstName} ${data.lastName}?`)) {
+                        remove(ref(db, "employees/" + childSnap.key)).catch(err => console.error(err));
+                    }
+                });
+
+                btnContainer.appendChild(editBtn);
+                btnContainer.appendChild(deleteBtn);
+                li.appendChild(btnContainer);
+
+                employeeListEl.appendChild(li);
+            });
+
+            // Populate department filter dynamically
+            filter.innerHTML = '<option value="all">All Departments</option>';
+            [...departmentSet].sort().forEach(dept => {
+                const option = document.createElement("option");
+                option.value = dept;
+                option.textContent = dept;
+                filter.appendChild(option);
+            });
+
+            // Apply filter after loading
+            applyFilter();
+        });
+    }
+
+    filter.addEventListener("change", () => {
+        console.log("Filter changed to:", filter.value);
+        applyFilter();
+    });
+
+    loadEmployees();
+
+    // Save / Update Employee
+    saveBtn.addEventListener("click", () => {
+        const employeeID = empID.value.trim();
+        const firstName = empFirstName.value.trim();
+        const lastName = empLastName.value.trim();
+        const department = empDepartment.value;
+
+        if (!employeeID || !firstName || !lastName || !department) {
+            alert("Please fill all fields!");
+            return;
+        }
+
+        set(ref(db, "employees/" + employeeID), {
+            firstName,
+            lastName,
+            department,
+            attendance: { timeIn: "", timeOut: "" }
+        })
+        .then(() => {
+            alert(editingEmployeeID ? "Employee updated!" : "Employee added!");
+            empID.value = "";
+            empID.disabled = false;
+            empFirstName.value = "";
+            empLastName.value = "";
+            empDepartment.value = "";
+            editingEmployeeID = null;
+            modalTitle.textContent = "Add Employee";
+            employeeModal.hide();
+        })
+        .catch(err => console.error(err));
+    });
+});

@@ -1,0 +1,34 @@
+/* LOGIN */
+
+body {
+    min-height: 100vh;
+    background: #f8f9fa;
+}
+
+.login-card {
+    max-width: 400px;
+    width: 100%;
+}
+
+/* DASHBOARD */
+
+.card-header {
+    background-color: #f8f9fa;
+}
+
+.dashboard-label {
+    font-size: 16px;
+}
+
+.dashboard-value {
+    font-size: 14px;
+    font-weight: 600;
+}
+.employee-item {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.employee-item.active {
+    background-color: #dc3545;
+}
