@@ -1,3 +1,5 @@
+import { db, ref, set, onValue, remove } from "./firebase.js";
+
 document.addEventListener("DOMContentLoaded", () => {
     const employeeListEl = document.getElementById("employeeList");
     const searchInput = document.getElementById("employeeSearch");
@@ -6,7 +8,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const empID = document.getElementById("empID");
     const empName = document.getElementById("empName");
     const empPosition = document.getElementById("empPosition");
-    const empRate = document.getElementById("empRate");
     const basicPay = document.getElementById("basicPay");
     const empFirstName = document.getElementById("empFirstName");
     const empLastName = document.getElementById("empLastName");
@@ -15,69 +16,58 @@ document.addEventListener("DOMContentLoaded", () => {
     const saveBtn = document.getElementById("saveEmployeeBtn");
     const employeeModal = new bootstrap.Modal(document.getElementById("employeeModal"));
 
-    const { db, firebaseImports } = window;
-    const { ref, set, onValue, remove } = firebaseImports;
     const employeesRef = ref(db, "employees/");
-
     let editingEmployeeID = null;
+    let selectedEmployeeID = null;
 
-    // Filter / Search function
+    // ------------------ FILTER FUNCTION ------------------
     function applyFilter() {
-    const selectedDept = filterSelect.value.toLowerCase();
-    const searchTerm = searchInput.value.trim().toLowerCase();
+        const selectedDept = filterSelect.value.toLowerCase();
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        let anyVisible = false;
 
-    let anyVisible = false;
+        document.querySelectorAll(".employee-item").forEach(item => {
+            const empDept = item.dataset.department.toLowerCase();
+            const empNameText = item.dataset.name.toLowerCase();
+            const show = (selectedDept === "all" || empDept === selectedDept) && empNameText.includes(searchTerm);
+            item.classList.toggle("d-none", !show);
+            if (show) anyVisible = true;
+        });
 
-    document.querySelectorAll(".employee-item").forEach(item => {
-        const empDept = item.dataset.department.toLowerCase();
-        const empName = item.dataset.name.toLowerCase();
-        const matchesDept = (selectedDept === "all" || empDept === selectedDept);
-        const matchesSearch = empName.includes(searchTerm);
-        const show = matchesDept && matchesSearch;
-
-        item.classList.toggle("d-none", !show);
-
-        if (show) anyVisible = true;
-    });
-
-    // Handle "No employees found"
-    let noItem = document.getElementById("noEmployees");
-    if (!anyVisible) {
-        if (!noItem) {
-            noItem = document.createElement("li");
-            noItem.id = "noEmployees";
-            noItem.className = "list-group-item text-muted";
-            noItem.textContent = "No employees found";
-            employeeListEl.appendChild(noItem);
-        }
-    } else {
-        if (noItem) {
+        const noItem = document.getElementById("noEmployees");
+        if (!anyVisible) {
+            if (!noItem) {
+                const li = document.createElement("li");
+                li.id = "noEmployees";
+                li.className = "list-group-item text-muted";
+                li.textContent = "No employees found";
+                employeeListEl.appendChild(li);
+            }
+        } else if (noItem) {
             noItem.remove();
         }
     }
-}
 
-
-    // Load Employees
+    // ------------------ LOAD EMPLOYEES ------------------
     function loadEmployees() {
         onValue(employeesRef, snapshot => {
             employeeListEl.innerHTML = "";
-            const departmentSet = new Set();
+            const departments = new Set();
 
             if (!snapshot.exists()) {
-                employeeListEl.innerHTML = '<li class="list-group-item text-muted" id="noEmployees">No employees yet</li>';
+                employeeListEl.innerHTML = '<li class="list-group-item text-muted">No employees yet</li>';
                 filterSelect.innerHTML = '<option value="all">All Departments</option>';
                 return;
             }
 
             snapshot.forEach(childSnap => {
                 const data = childSnap.val();
-                departmentSet.add(data.department);
+                departments.add(data.department);
 
                 const li = document.createElement("li");
                 li.className = "list-group-item d-flex justify-content-between align-items-center employee-item";
-                li.dataset.department = data.department;
                 li.dataset.name = `${data.firstName} ${data.lastName}`;
+                li.dataset.department = data.department;
                 li.style.cursor = "pointer";
 
                 const nameSpan = document.createElement("span");
@@ -85,18 +75,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 nameSpan.style.flexGrow = "1";
                 li.appendChild(nameSpan);
 
-                // Click to show details
+                // ------------------ CLICK TO SELECT ------------------
                 nameSpan.addEventListener("click", () => {
                     document.querySelectorAll(".employee-item").forEach(i => i.classList.remove("active"));
                     li.classList.add("active");
-                    empID.textContent = childSnap.key;
+
+                    selectedEmployeeID = childSnap.key;
+
+                    // Update summary
                     empName.textContent = `${data.firstName} ${data.lastName}`;
                     empPosition.textContent = data.department;
-                    empRate.textContent = "-";
-                    basicPay.textContent = "-";
+
+                    // Display all attendance
+                    displayAttendance(selectedEmployeeID, data.dailyRate);
                 });
 
-                // Edit / Delete buttons
+                // ------------------ EDIT BUTTON ------------------
                 const btnContainer = document.createElement("div");
 
                 const editBtn = document.createElement("button");
@@ -114,13 +108,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     employeeModal.show();
                 });
 
+                // ------------------ DELETE BUTTON ------------------
                 const deleteBtn = document.createElement("button");
                 deleteBtn.className = "btn btn-sm btn-danger";
                 deleteBtn.textContent = "Delete";
                 deleteBtn.addEventListener("click", e => {
                     e.stopPropagation();
                     if (confirm(`Delete ${data.firstName} ${data.lastName}?`)) {
-                        remove(ref(db, "employees/" + childSnap.key)).catch(err => console.error(err));
+                        remove(ref(db, `employees/${childSnap.key}`)).catch(err => console.error(err));
                     }
                 });
 
@@ -131,61 +126,143 @@ document.addEventListener("DOMContentLoaded", () => {
                 employeeListEl.appendChild(li);
             });
 
-            // Populate department filter dynamically
+            // Populate department filter
             filterSelect.innerHTML = '<option value="all">All Departments</option>';
-            [...departmentSet].sort().forEach(dept => {
+            [...departments].sort().forEach(d => {
                 const option = document.createElement("option");
-                option.value = dept;
-                option.textContent = dept;
+                option.value = d;
+                option.textContent = d;
                 filterSelect.appendChild(option);
             });
 
-            // Apply filter after loading
             applyFilter();
         });
     }
 
     loadEmployees();
 
-    // Attach events
+    // ------------------ FILTER EVENTS ------------------
     filterSelect.addEventListener("change", applyFilter);
     searchInput.addEventListener("input", applyFilter);
 
-    // Save / Update Employee
-    saveBtn.addEventListener("click", () => {
-        const employeeID = empID.value.trim();
-        const firstName = empFirstName.value.trim();
-        const lastName = empLastName.value.trim();
-        const department = empDepartment.value;
+        // ------------------ SAVE / UPDATE EMPLOYEE ------------------
+        saveBtn.addEventListener("click", () => {
+            const employeeID = empID.value.trim();
+            const firstName = empFirstName.value.trim();
+            const lastName = empLastName.value.trim();
+            const department = empDepartment.value;
+            const empDailyRate = document.getElementById("empDailyRate");
+            const dailyRateValue = parseFloat(empDailyRate?.value) || 0;
 
-        if (!employeeID || !firstName || !lastName || !department) {
-            alert("Please fill all fields!");
-            return;
-        }
+            if (!employeeID || !firstName || !lastName || !department) {
+                alert("Please fill all fields!");
+                return;
+            }
 
-        set(ref(db, "employees/" + employeeID), {
-            firstName,
-            lastName,
-            department,
-            attendance: { timeIn: "", timeOut: "" }
-        })
-        .then(() => {
-            alert(editingEmployeeID ? "Employee updated!" : "Employee added!");
-            empID.value = "";
-            empID.disabled = false;
-            empFirstName.value = "";
-            empLastName.value = "";
-            empDepartment.value = "";
-            editingEmployeeID = null;
-            modalTitle.textContent = "Add Employee";
-            employeeModal.hide();
-        })
-        .catch(err => console.error(err));
-    });
+            const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
 
-    // Optional: Initialize Select2 if you want searchable department dropdown
+            set(ref(db, `employees/${employeeID}`), {
+                firstName,
+                lastName,
+                department,
+                dailyRate: dailyRateValue,
+                attendance: {
+                    [today]: { // use today's date as the key
+                        timeIn: "",
+                        timeOut: "",
+                    }
+                }
+            })
+            .then(() => {
+                alert(editingEmployeeID ? "Employee updated!" : "Employee added!");
+                empID.value = "";
+                empID.disabled = false;
+                empFirstName.value = "";
+                empLastName.value = "";
+                empDepartment.value = "";
+                editingEmployeeID = null;
+                modalTitle.textContent = "Add Employee";
+                employeeModal.hide();
+            })
+            .catch(err => console.error(err));
+        });
+
+    // ------------------ SELECT2 (optional) ------------------
     if (window.jQuery) {
         $(filterSelect).select2({ placeholder: "Filter by department", allowClear: true, width: '100%' });
         $(filterSelect).on('change', applyFilter);
     }
+
+    // ------------------ ATTENDANCE DISPLAY ------------------
+    function displayAttendance(employeeId, dailyRate) {
+    const attList = document.getElementById("attendanceList");
+    attList.innerHTML = ""; // clear previous
+
+    const attendanceRef = ref(db, `employees/${employeeId}/attendance`);
+    onValue(attendanceRef, snapshot => {
+        const data = snapshot.val();
+        if (!data) {
+            attList.innerHTML = "<p class='text-center text-muted'>No attendance records</p>";
+            return;
+        }
+
+        // Sort dates descending (latest first)
+        const sortedDates = Object.keys(data).sort((a, b) => new Date(b) - new Date(a));
+
+        sortedDates.forEach(date => {
+            const record = data[date];
+            const timeIn = record.timeIn || "-";
+            const timeOut = record.timeOut || "-";
+            const hoursWorked = calculateHours(timeIn, timeOut);
+            let pay = "-";
+            if (hoursWorked !== "-" && dailyRate) {
+                const hourlyRate = parseFloat(dailyRate) / 8;
+                pay = (hoursWorked * hourlyRate).toFixed(2);
+            }
+
+            const row = document.createElement("div");
+            row.classList.add("row", "text-center", "mb-2");
+            row.innerHTML = `
+                <div class="col-md-2">${date}</div>
+                <div class="col-md-2">${timeIn}</div>
+                <div class="col-md-2">${timeOut}</div>
+                <div class="col-md-2">${hoursWorked}</div>
+                <div class="col-md-2">₱${pay}</div>
+            `;
+            attList.appendChild(row);
+        });
+    });
+}
+
+
+    // ------------------ HOURS CALCULATION ------------------
+    function calculateHours(timeIn, timeOut) {
+        if (!timeIn || !timeOut) return "-";
+
+        function parseTime(timeStr) {
+            const ampmMatch = timeStr.match(/(AM|PM)/i);
+            if (ampmMatch) {
+                const [time, modifier] = timeStr.split(' ');
+                let [hours, minutes] = time.split(':').map(Number);
+                if (modifier.toUpperCase() === 'PM' && hours !== 12) hours += 12;
+                if (modifier.toUpperCase() === 'AM' && hours === 12) hours = 0;
+                return { hours, minutes };
+            } else {
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                return { hours, minutes };
+            }
+        }
+
+        const tIn = parseTime(timeIn);
+        const tOut = parseTime(timeOut);
+
+        const dIn = new Date(1970, 0, 1, tIn.hours, tIn.minutes);
+        const dOut = new Date(1970, 0, 1, tOut.hours, tOut.minutes);
+
+        let diff = (dOut - dIn) / (1000 * 60 * 60);
+        if (diff < 0) diff += 24; // handle overnight shifts
+        diff -= 1; // deduct 1-hour lunch
+        return Math.max(diff, 0).toFixed(2);
+    }
+
 });
