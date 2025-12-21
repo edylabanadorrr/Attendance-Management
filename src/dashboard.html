@@ -77,15 +77,17 @@
 
             <!-- Attendance Table Header -->
             <div class="row text-center fw-semibold mb-2">
-                <div class="col-md-2">Date</div>
-                <div class="col-md-2">Time In</div>
-                <div class="col-md-2">Time Out</div>
-                <div class="col-md-2">Hours</div>
-                <div class="col-md-2">Basic Pay</div>
+                <div class="col">Date</div>
+                <div class="col">Time In</div>
+                <div class="col">Time Out</div>
+                <div class="col">Hours</div>
+                <div class="col">Daily Rate</div>
+                <div class="col">OT Hours</div>
+                <div class="col">Subtotal</div>
             </div>
 
             <!-- Attendance Rows will go here -->
-            <div id="attendanceList"></div>
+            <div id="attendanceList" style="max-height: 400px; overflow-y: auto;"></div>
         </div>
     </div>
 </div>
@@ -139,6 +141,10 @@
         </div>
     </div>
 </div>
+
+<!-- Placeholder for external modals -->
+<div id="modalsContainer"></div>
+
 
 <!-- Bootstrap -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

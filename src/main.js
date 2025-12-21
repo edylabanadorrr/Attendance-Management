@@ -1,4 +1,6 @@
-import { db, ref, set, onValue, remove } from "./firebase.js";
+import { db, ref, set, onValue, remove, update, get } from "./firebase.js";
+import { initManageOT } from "./manageOT.js";
+
 
 document.addEventListener("DOMContentLoaded", () => {
     const employeeListEl = document.getElementById("employeeList");
@@ -81,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     li.classList.add("active");
 
                     selectedEmployeeID = childSnap.key;
+                    localStorage.setItem("selectedEmployeeID", selectedEmployeeID); // optional, if you want persistence
 
                     // Update summary
                     empName.textContent = `${data.firstName} ${data.lastName}`;
@@ -146,46 +149,78 @@ document.addEventListener("DOMContentLoaded", () => {
     searchInput.addEventListener("input", applyFilter);
 
         // ------------------ SAVE / UPDATE EMPLOYEE ------------------
-        saveBtn.addEventListener("click", () => {
-            const employeeID = empID.value.trim();
-            const firstName = empFirstName.value.trim();
-            const lastName = empLastName.value.trim();
-            const department = empDepartment.value;
-            const empDailyRate = document.getElementById("empDailyRate");
-            const dailyRateValue = parseFloat(empDailyRate?.value) || 0;
+        saveBtn.addEventListener("click", async () => {
+    const employeeID = empID.value.trim();
+    const firstName = empFirstName.value.trim();
+    const lastName = empLastName.value.trim();
+    const department = empDepartment.value;
+    const empDailyRate = document.getElementById("empDailyRate");
+    const dailyRateValue = parseFloat(empDailyRate?.value) || 0;
 
-            if (!employeeID || !firstName || !lastName || !department) {
-                alert("Please fill all fields!");
-                return;
-            }
+    if (!employeeID || !firstName || !lastName || !department) {
+        alert("Please fill all fields!");
+        return;
+    }
 
-            const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+    const employeeRef = ref(db, `employees/${employeeID}`);
 
-            set(ref(db, `employees/${employeeID}`), {
+    try {
+        if (!editingEmployeeID) {
+            // ---------- ADD NEW EMPLOYEE ----------
+            const today = new Date().toISOString().split("T")[0];
+            await set(employeeRef, {
                 firstName,
                 lastName,
                 department,
                 dailyRate: dailyRateValue,
                 attendance: {
-                    [today]: { // use today's date as the key
-                        timeIn: "",
-                        timeOut: "",
-                    }
+                    [today]: { timeIn: "", timeOut: "" }
                 }
-            })
-            .then(() => {
-                alert(editingEmployeeID ? "Employee updated!" : "Employee added!");
-                empID.value = "";
-                empID.disabled = false;
-                empFirstName.value = "";
-                empLastName.value = "";
-                empDepartment.value = "";
-                editingEmployeeID = null;
-                modalTitle.textContent = "Add Employee";
-                employeeModal.hide();
-            })
-            .catch(err => console.error(err));
-        });
+            });
+            alert("Employee added!");
+        } else {
+            // ---------- UPDATE EXISTING EMPLOYEE ----------
+            await update(employeeRef, {
+                firstName,
+                lastName,
+                department,
+                dailyRate: dailyRateValue
+            });
+            alert("Employee updated!");
+        }
+
+        // Reset form
+        empID.value = "";
+        empID.disabled = false;
+        empFirstName.value = "";
+        empLastName.value = "";
+        empDepartment.value = "";
+        editingEmployeeID = null;
+        modalTitle.textContent = "Add Employee";
+        employeeModal.hide();
+
+        // ------------------ REFRESH EMPLOYEE LIST ------------------
+        loadEmployees();
+
+        // Automatically select the saved employee
+        selectedEmployeeID = employeeID;
+        localStorage.setItem("selectedEmployeeID", selectedEmployeeID);
+
+        // Display employee summary and attendance
+        const snapshot = await get(employeeRef);
+            const empData = snapshot.val();
+            if (empData) {
+                empName.textContent = `${empData.firstName} ${empData.lastName}`;
+                empPosition.textContent = empData.department;
+                displayAttendance(selectedEmployeeID, empData.dailyRate);
+            }
+
+    } catch (err) {
+        console.error("Failed to save employee:", err);
+        alert("Failed to save employee. Check console for details.");
+    }
+});
+
 
     // ------------------ SELECT2 (optional) ------------------
     if (window.jQuery) {
@@ -214,20 +249,30 @@ document.addEventListener("DOMContentLoaded", () => {
             const timeIn = record.timeIn || "-";
             const timeOut = record.timeOut || "-";
             const hoursWorked = calculateHours(timeIn, timeOut);
-            let pay = "-";
+            
+            // Get overtime hours stored in attendance (default 0)
+            const overtimeHours = record.overtimeHours || 0;
+
+            let regularPay = 0, otPay = 0, subtotal = "-";
             if (hoursWorked !== "-" && dailyRate) {
-                const hourlyRate = parseFloat(dailyRate) / 8;
-                pay = (hoursWorked * hourlyRate).toFixed(2);
+                const hourlyRate = parseFloat(dailyRate) / 8; // 8-hour workday
+                regularPay = parseFloat(hoursWorked) * hourlyRate;
+                // Overtime rate in PH = 25% of hourly rate per hour (regular day)
+                const otRate = hourlyRate * 1.25;
+                otPay = parseFloat(overtimeHours) * hourlyRate * 1.25; // PH OT = 125% per hour
+                subtotal = (regularPay + otPay).toFixed(2);
             }
 
             const row = document.createElement("div");
             row.classList.add("row", "text-center", "mb-2");
             row.innerHTML = `
-                <div class="col-md-2">${date}</div>
-                <div class="col-md-2">${timeIn}</div>
-                <div class="col-md-2">${timeOut}</div>
-                <div class="col-md-2">${hoursWorked}</div>
-                <div class="col-md-2">₱${pay}</div>
+                <div class="col">${date}</div>
+                <div class="col">${timeIn}</div>
+                <div class="col">${timeOut}</div>
+                <div class="col">${hoursWorked}</div>
+                <div class="col">₱${parseFloat(dailyRate).toFixed(2)}</div>
+                <div class="col">${overtimeHours}</div>
+                <div class="col">₱${subtotal}</div>
             `;
             attList.appendChild(row);
         });
@@ -264,5 +309,18 @@ document.addEventListener("DOMContentLoaded", () => {
         diff -= 1; // deduct 1-hour lunch
         return Math.max(diff, 0).toFixed(2);
     }
+
+    // Load Manage Overtime modal and initialize its JS
+    fetch("manageOT.html")
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById("modalsContainer").innerHTML = html;
+
+            // Initialize Manage OT JS after modal is in DOM
+            import("./manageOT.js").then(module => {
+                module.initManageOT(() => selectedEmployeeID, displayAttendance);
+            });
+        })
+        .catch(err => console.error("Failed to load Manage OT modal:", err));
 
 });

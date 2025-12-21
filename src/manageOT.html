@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <!-- Manage Overtime Modal -->
+    <div class="modal fade" id="manageOTModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title">Manage Overtime</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+            <div class="table-responsive">
+            <table class="table table-bordered">
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time In</th>
+                    <th>Time Out</th>
+                    <th>Regular Hours</th>
+                    <th>Daily Rate</th>
+                    <th>OT Hours</th>
+                    <th>Total Hours</th>
+                    <th>Total Pay (₱)</th>
+                </tr>
+                </thead>
+                <tbody id="otTableBody">
+                <!-- rows injected dynamically -->
+                </tbody>
+            </table>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" id="saveOTBtn">Save OT</button>
+        </div>
+        </div>
+    </div>
+    </div>
+
+</head>
+<body>
+    
+</body>
+</html>
